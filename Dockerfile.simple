@@ -1,0 +1,16 @@
+# Simple Dockerfile for pre-built binary
+FROM registry.suse.com/bci/bci-micro:15.6
+LABEL maintainer="goutamkreddy@gmail.com"
+
+# Copy pre-built binary
+COPY dist/gke-operator /usr/bin/gke-operator
+
+# Set permissions and create user manually
+RUN chmod +x /usr/bin/gke-operator && \
+    echo "gke-operator:x:1007:1007::/home/gke-operator:/sbin/nologin" >> /etc/passwd && \
+    echo "gke-operator:x:1007:" >> /etc/group
+
+# Switch to non-root user
+USER 1007:1007
+
+ENTRYPOINT ["/usr/bin/gke-operator"]
