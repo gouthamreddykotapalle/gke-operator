@@ -1,0 +1,73 @@
+apiVersion: gke.cattle.io/v1
+kind: GKEClusterConfig
+metadata:
+  name: test-cmek-cluster-new
+  namespace: cattle-global-data
+spec:
+  clusterAddons:
+    horizontalPodAutoscaling: true
+    httpLoadBalancing: true
+    networkPolicyConfig: true
+  clusterName: test-cmek-cluster-new
+  description: "New CMEK cluster with different CIDR block"
+  enableKubernetesAlpha: false
+  googleCredentialSecret: cattle-global-data:cc-nnb6j
+  imported: false
+  ipAllocationPolicy:
+    clusterSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-pod-0
+    servicesSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-svc-0
+    useIpAliases: true
+  kubernetesVersion: 1.32.4-gke.1415000
+  labels:
+    environment: "test"
+    encryption: "cmek"
+    version: "new"
+  locations:
+  - us-central1-a
+  loggingService: logging.googleapis.com/kubernetes
+  maintenanceWindow: "04:00"
+  masterAuthorizedNetworks:
+    cidrBlocks:
+    - cidrBlock: 10.0.0.0/8
+      displayName: "Internal networks"
+    - cidrBlock: 172.16.0.0/12
+      displayName: "Private networks"
+    enabled: true
+  monitoringService: monitoring.googleapis.com/kubernetes
+  network: projects/pp-d-us-central1-xpn/global/networks/us-central1-test-apps
+  networkPolicyEnabled: true
+  nodePools:
+  - autoscaling:
+      enabled: true
+      maxNodeCount: 8
+      minNodeCount: 1
+    config:
+      bootDiskKmsKey: projects/pp-d-dev-gce01-kms/locations/us-central1/keyRings/dev-pp-keyring-us-central1/cryptoKeys/dev-pp-vmenc-key-us-central1
+      diskSizeGb: 100
+      diskType: pd-balanced
+      imageType: UBUNTU_CONTAINERD
+      machineType: n2d-standard-4
+      oauthScopes:
+      - https://www.googleapis.com/auth/cloud-platform
+      serviceAccount: lsvc-d-caas-kubeio@dev52-test-apps-kubeio.iam.gserviceaccount.com
+      shieldedInstanceConfig:
+        enableIntegrityMonitoring: true
+        enableSecureBoot: true
+    initialNodeCount: 2
+    management:
+      autoRepair: true
+      autoUpgrade: true
+    maxPodsConstraint: 32
+    name: cmek-nodepool-new
+    version: 1.32.4-gke.1415000
+  privateClusterConfig:
+    enablePrivateEndpoint: true
+    enablePrivateNodes: true
+    masterIpv4CidrBlock: 100.64.128.128/28
+  projectID: dev52-test-apps-kubeio
+  shieldedNodes:
+    enabled: true
+  subnetwork: projects/pp-d-us-central1-xpn/regions/us-central1/subnetworks/dev52-us-central1-test-apps-2
+  workloadIdentityConfig:
+    workloadPool: dev52-test-apps-kubeio.svc.id.goog
+  zone: us-central1-a

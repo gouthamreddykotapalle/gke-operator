@@ -497,6 +497,12 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 		)
 	}
 	
+	// Check for node-pool-specific boot disk KMS key
+	if np.Config.BootDiskKmsKey != "" {
+		ret.Config.BootDiskKmsKey = np.Config.BootDiskKmsKey
+		logrus.Debugf("🔍 CMEK_DEBUG: Using node-pool-specific bootDiskKmsKey: %s", np.Config.BootDiskKmsKey)
+	}
+	
 	// Security Controls for Node Pools
 	
 	// Shielded Instance Configuration (Integrity Monitoring and Secure Boot)
