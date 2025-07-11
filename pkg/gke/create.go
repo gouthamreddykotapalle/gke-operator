@@ -154,6 +154,65 @@ func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClust
 		}
 	}
 
+	// Security Controls Implementation
+
+	// Database Encryption (etcd encryption at rest with Cloud KMS)
+	if config.Spec.DatabaseEncryption != nil {
+		request.Cluster.DatabaseEncryption = &gkeapi.DatabaseEncryption{
+			State:   config.Spec.DatabaseEncryption.State,
+			KeyName: config.Spec.DatabaseEncryption.KeyName,
+		}
+	}
+
+	// Binary Authorization
+	if config.Spec.BinaryAuthorization != nil {
+		request.Cluster.BinaryAuthorization = &gkeapi.BinaryAuthorization{
+			Enabled: config.Spec.BinaryAuthorization.Enabled,
+		}
+	}
+
+	// Shielded Nodes
+	if config.Spec.ShieldedNodes != nil {
+		request.Cluster.ShieldedNodes = &gkeapi.ShieldedNodes{
+			Enabled: config.Spec.ShieldedNodes.Enabled,
+		}
+	}
+
+	// Workload Identity
+	if config.Spec.WorkloadIdentityConfig != nil {
+		request.Cluster.WorkloadIdentityConfig = &gkeapi.WorkloadIdentityConfig{
+			WorkloadPool: config.Spec.WorkloadIdentityConfig.WorkloadPool,
+		}
+	}
+
+	// Legacy ABAC (should be disabled for security)
+	if config.Spec.LegacyAbac != nil {
+		request.Cluster.LegacyAbac = &gkeapi.LegacyAbac{
+			Enabled: config.Spec.LegacyAbac.Enabled,
+		}
+	}
+
+	// Master Authentication (basic auth and client certs should be disabled)
+	if config.Spec.MasterAuth != nil {
+		masterAuth := &gkeapi.MasterAuth{
+			Username: config.Spec.MasterAuth.Username,
+			Password: config.Spec.MasterAuth.Password,
+		}
+		if config.Spec.MasterAuth.ClientCertificateConfig != nil {
+			masterAuth.ClientCertificateConfig = &gkeapi.ClientCertificateConfig{
+				IssueClientCertificate: config.Spec.MasterAuth.ClientCertificateConfig.IssueClientCertificate,
+			}
+		}
+		request.Cluster.MasterAuth = masterAuth
+	}
+
+	// Intra-node Visibility
+	if config.Spec.IntraNodeVisibilityConfig != nil {
+		request.Cluster.NetworkConfig = &gkeapi.NetworkConfig{
+			EnableIntraNodeVisibility: config.Spec.IntraNodeVisibilityConfig.Enabled,
+		}
+	}
+
 	return request
 }
 
@@ -363,6 +422,24 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 			config.Spec.CustomerManagedEncryptionKey.KeyName,
 		)
 	}
+	
+	// Security Controls for Node Pools
+	
+	// Shielded Instance Configuration (Integrity Monitoring and Secure Boot)
+	if np.Config.ShieldedInstanceConfig != nil {
+		ret.Config.ShieldedInstanceConfig = &gkeapi.ShieldedInstanceConfig{
+			EnableIntegrityMonitoring: np.Config.ShieldedInstanceConfig.EnableIntegrityMonitoring,
+			EnableSecureBoot:         np.Config.ShieldedInstanceConfig.EnableSecureBoot,
+		}
+	}
+
+	// Workload Metadata Configuration (for GKE Metadata Server)
+	if np.Config.WorkloadMetadataConfig != nil {
+		ret.Config.WorkloadMetadataConfig = &gkeapi.WorkloadMetadataConfig{
+			Mode: np.Config.WorkloadMetadataConfig.Mode,
+		}
+	}
+	
 	if config.Spec.IPAllocationPolicy != nil && config.Spec.IPAllocationPolicy.UseIPAliases {
 		ret.MaxPodsConstraint = &gkeapi.MaxPodsConstraint{
 			MaxPodsPerNode: *np.MaxPodsConstraint,

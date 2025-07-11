@@ -1,0 +1,160 @@
+apiVersion: gke.cattle.io/v1
+kind: GKEClusterConfig
+metadata:
+  name: secure-gke-cluster
+  namespace: default
+spec:
+  # Basic cluster configuration
+  projectID: "your-gcp-project-id"
+  region: "us-central1"
+  clusterName: "secure-cluster"
+  description: "GKE cluster with enhanced security controls"
+  googleCredentialSecret: "gcp-credentials"
+  
+  # Kubernetes configuration
+  kubernetesVersion: "1.28.5-gke.1217000"
+  enableKubernetesAlpha: false  # Alpha features disabled for security
+  
+  # Network configuration for private cluster
+  network: "default"
+  subnetwork: "default"
+  networkPolicyEnabled: true
+  
+  # Private cluster configuration
+  privateClusterConfig:
+    enablePrivateNodes: true
+    enablePrivateEndpoint: true
+    masterIpv4CidrBlock: "172.16.0.0/28"
+  
+  # IP allocation policy
+  ipAllocationPolicy:
+    useIpAliases: true
+    clusterIpv4CidrBlock: "10.0.0.0/14"
+    servicesIpv4CidrBlock: "10.4.0.0/19"
+  
+  # Master authorized networks
+  masterAuthorizedNetworks:
+    enabled: true
+    cidrBlocks:
+      - cidrBlock: "10.0.0.0/8"
+        displayName: "Internal network"
+  
+  # Security Controls
+  
+  # Database encryption with Cloud KMS
+  databaseEncryption:
+    state: "ENCRYPTED"
+    keyName: "projects/your-project/locations/us-central1/keyRings/gke-ring/cryptoKeys/etcd-key"
+  
+  # Binary Authorization
+  binaryAuthorization:
+    enabled: true
+  
+  # Shielded Nodes
+  shieldedNodes:
+    enabled: true
+  
+  # Workload Identity
+  workloadIdentityConfig:
+    workloadPool: "your-project.svc.id.goog"
+  
+  # Legacy ABAC disabled
+  legacyAbac:
+    enabled: false
+  
+  # Master authentication - Basic auth and client certs disabled
+  masterAuth:
+    username: ""
+    password: ""
+    clientCertificateConfig:
+      issueClientCertificate: false
+  
+  # Intra-node Visibility
+  intraNodeVisibilityConfig:
+    enabled: true
+  
+  # Customer Managed Encryption Key for node boot disks
+  customerManagedEncryptionKey:
+    ringName: "gke-ring"
+    keyName: "node-boot-disk-key"
+  
+  # Cluster add-ons
+  clusterAddons:
+    httpLoadBalancing: true
+    horizontalPodAutoscaling: true
+    networkPolicyConfig: true
+  
+  # Monitoring and logging
+  loggingService: "logging.googleapis.com/kubernetes"
+  monitoringService: "monitoring.googleapis.com/kubernetes"
+  
+  # Maintenance window
+  maintenanceWindow: "03:00"
+  
+  # Cluster locations
+  locations:
+    - "us-central1-a"
+    - "us-central1-b"
+    - "us-central1-c"
+  
+  # Labels
+  labels:
+    environment: "production"
+    security-level: "high"
+  
+  # Node Pools with security requirements
+  nodePools:
+    - name: "secure-pool"
+      version: "1.28.5-gke.1217000"
+      initialNodeCount: 3
+      
+      # Autoscaling configuration
+      autoscaling:
+        enabled: true
+        minNodeCount: 1
+        maxNodeCount: 10
+      
+      # Max pods constraint for IP aliases
+      maxPodsConstraint: 110
+      
+      # Node configuration with security controls
+      config:
+        machineType: "e2-standard-4"
+        diskSizeGb: 100
+        diskType: "pd-ssd"
+        imageType: "COS_CONTAINERD"  # Container-Optimized OS
+        
+        # Service Account - Not using default compute service account
+        serviceAccount: "gke-nodes@your-project.iam.gserviceaccount.com"
+        
+        # OAuth scopes
+        oauthScopes:
+          - "https://www.googleapis.com/auth/devstorage.read_only"
+          - "https://www.googleapis.com/auth/logging.write"
+          - "https://www.googleapis.com/auth/monitoring"
+          - "https://www.googleapis.com/auth/servicecontrol"
+          - "https://www.googleapis.com/auth/service.management.readonly"
+          - "https://www.googleapis.com/auth/trace.append"
+        
+        # Shielded Instance Configuration
+        shieldedInstanceConfig:
+          enableIntegrityMonitoring: true
+          enableSecureBoot: true
+        
+        # Workload Metadata Configuration - GKE Metadata Server for Workload Identity
+        workloadMetadataConfig:
+          mode: "GKE_METADATA"
+        
+        # Node labels
+        labels:
+          node-type: "secure"
+        
+        # Node tags for firewall rules
+        tags:
+          - "gke-node"
+          - "secure-node"
+      
+      # Node pool management
+      management:
+        autoRepair: true
+        autoUpgrade: true
