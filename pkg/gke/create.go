@@ -136,11 +136,13 @@ func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClust
 	// Only set ClusterIpv4Cidr if we're not using secondary ranges
 	logrus.Debugf("🔍 CIDR_DEBUG: ClusterIpv4CidrBlock is nil: %t", config.Spec.ClusterIpv4CidrBlock == nil)
 	logrus.Debugf("🔍 CIDR_DEBUG: ClusterSecondaryRangeName: '%s'", config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName)
+	
+	// Don't set top-level ClusterIpv4Cidr when using secondary ranges
 	if config.Spec.ClusterIpv4CidrBlock != nil && config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName == "" {
 		clusterIpv4Cidr = *config.Spec.ClusterIpv4CidrBlock
 		logrus.Debugf("🔍 CIDR_DEBUG: Setting ClusterIpv4Cidr to: %s", clusterIpv4Cidr)
 	} else {
-		logrus.Debugf("🔍 CIDR_DEBUG: NOT setting ClusterIpv4Cidr (using secondary ranges)")
+		logrus.Debugf("🔍 CIDR_DEBUG: NOT setting ClusterIpv4Cidr (using secondary ranges or clusterIpv4CidrBlock is nil)")
 	}
 
 	request := &gkeapi.CreateClusterRequest{
@@ -163,50 +165,35 @@ func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClust
 				SubnetworkName:             config.Spec.IPAllocationPolicy.SubnetworkName,
 				UseIpAliases:               config.Spec.IPAllocationPolicy.UseIPAliases,
 			},
-			AddonsConfig:      &gkeapi.AddonsConfig{},
-			NodePools:         []*gkeapi.NodePool{},
-			Locations:         config.Spec.Locations,
-			MaintenancePolicy: &gkeapi.MaintenancePolicy{},
 		},
 	}
+	
+	// Debug logging for IP allocation policy
+	logrus.Debugf("🔍 IP_POLICY_DEBUG: ClusterIpv4CidrBlock: '%s'", request.Cluster.IpAllocationPolicy.ClusterIpv4CidrBlock)
+	logrus.Debugf("🔍 IP_POLICY_DEBUG: ClusterSecondaryRangeName: '%s'", request.Cluster.IpAllocationPolicy.ClusterSecondaryRangeName)
+	logrus.Debugf("🔍 IP_POLICY_DEBUG: ServicesIpv4CidrBlock: '%s'", request.Cluster.IpAllocationPolicy.ServicesIpv4CidrBlock)
+	logrus.Debugf("🔍 IP_POLICY_DEBUG: ServicesSecondaryRangeName: '%s'", request.Cluster.IpAllocationPolicy.ServicesSecondaryRangeName)
+	logrus.Debugf("🔍 IP_POLICY_DEBUG: UseIpAliases: %t", request.Cluster.IpAllocationPolicy.UseIpAliases)
 
-	if *config.Spec.MaintenanceWindow != "" {
-		request.Cluster.MaintenancePolicy.Window = &gkeapi.MaintenanceWindow{
-			DailyMaintenanceWindow: &gkeapi.DailyMaintenanceWindow{
-				StartTime: *config.Spec.MaintenanceWindow,
-			},
-		}
+	request.Cluster.AddonsConfig = &gkeapi.AddonsConfig{}
+	request.Cluster.NodePools = make([]*gkeapi.NodePool, 0, len(config.Spec.NodePools))
+
+	for np := range config.Spec.NodePools {
+		nodePool := newGKENodePoolFromConfig(&config.Spec.NodePools[np], config)
+		request.Cluster.NodePools = append(request.Cluster.NodePools, nodePool)
 	}
 
-	if config.Spec.AutopilotConfig != nil && config.Spec.AutopilotConfig.Enabled {
-		request.Cluster.Autopilot = &gkeapi.Autopilot{
-			Enabled: config.Spec.AutopilotConfig.Enabled,
+	if config.Spec.MasterAuthorizedNetworksConfig != nil {
+		blocks := make([]*gkeapi.CidrBlock, len(config.Spec.MasterAuthorizedNetworksConfig.CidrBlocks))
+		for _, b := range config.Spec.MasterAuthorizedNetworksConfig.CidrBlocks {
+			blocks = append(blocks, &gkeapi.CidrBlock{
+				CidrBlock:   b.CidrBlock,
+				DisplayName: b.DisplayName,
+			})
 		}
-	} else {
-		addons := config.Spec.ClusterAddons
-		request.Cluster.AddonsConfig.HttpLoadBalancing = &gkeapi.HttpLoadBalancing{Disabled: !addons.HTTPLoadBalancing}
-		request.Cluster.AddonsConfig.HorizontalPodAutoscaling = &gkeapi.HorizontalPodAutoscaling{Disabled: !addons.HorizontalPodAutoscaling}
-		request.Cluster.AddonsConfig.NetworkPolicyConfig = &gkeapi.NetworkPolicyConfig{Disabled: !addons.NetworkPolicyConfig}
-
-		request.Cluster.NodePools = make([]*gkeapi.NodePool, 0, len(config.Spec.NodePools))
-
-		for np := range config.Spec.NodePools {
-			nodePool := newGKENodePoolFromConfig(&config.Spec.NodePools[np], config)
-			request.Cluster.NodePools = append(request.Cluster.NodePools, nodePool)
-		}
-
-		if config.Spec.MasterAuthorizedNetworksConfig != nil {
-			blocks := make([]*gkeapi.CidrBlock, len(config.Spec.MasterAuthorizedNetworksConfig.CidrBlocks))
-			for _, b := range config.Spec.MasterAuthorizedNetworksConfig.CidrBlocks {
-				blocks = append(blocks, &gkeapi.CidrBlock{
-					CidrBlock:   b.CidrBlock,
-					DisplayName: b.DisplayName,
-				})
-			}
-			request.Cluster.MasterAuthorizedNetworksConfig = &gkeapi.MasterAuthorizedNetworksConfig{
-				Enabled:    config.Spec.MasterAuthorizedNetworksConfig.Enabled,
-				CidrBlocks: blocks,
-			}
+		request.Cluster.MasterAuthorizedNetworksConfig = &gkeapi.MasterAuthorizedNetworksConfig{
+			Enabled:    config.Spec.MasterAuthorizedNetworksConfig.Enabled,
+			CidrBlocks: blocks,
 		}
 	}
 
@@ -388,17 +375,28 @@ func validateCreateRequest(ctx context.Context, gkeClient services.GKEClusterSer
 	if config.Spec.MasterAuthorizedNetworksConfig == nil {
 		return fmt.Errorf(cannotBeNilError, "masterAuthorizedNetworksConfig", config.Spec.ClusterName, config.Name)
 	}
-	if config.Spec.MonitoringService == nil {
-		return fmt.Errorf(cannotBeNilError, "monitoringService", config.Spec.ClusterName, config.Name)
-	}
-	if config.Spec.Locations == nil {
-		return fmt.Errorf(cannotBeNilError, "locations", config.Spec.ClusterName, config.Name)
-	}
-	if config.Spec.MaintenanceWindow == nil {
-		return fmt.Errorf(cannotBeNilError, "maintenanceWindow", config.Spec.ClusterName, config.Name)
-	}
-	if config.Spec.Labels == nil {
-		return fmt.Errorf(cannotBeNilError, "labels", config.Spec.ClusterName, config.Name)
+
+	// Validate IP allocation policy to prevent CIDR conflicts
+	if config.Spec.IPAllocationPolicy != nil {
+		// Validate cluster IP allocation
+		if config.Spec.IPAllocationPolicy.ClusterIpv4CidrBlock != "" && config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName != "" {
+			return fmt.Errorf("cluster IP allocation conflict: cannot specify both clusterIpv4CidrBlock and clusterSecondaryRangeName for cluster [%s (id: %s)]. Use either CIDR block or secondary range name, not both", config.Spec.ClusterName, config.Name)
+		}
+		
+		// Validate services IP allocation
+		if config.Spec.IPAllocationPolicy.ServicesIpv4CidrBlock != "" && config.Spec.IPAllocationPolicy.ServicesSecondaryRangeName != "" {
+			return fmt.Errorf("services IP allocation conflict: cannot specify both servicesIpv4CidrBlock and servicesSecondaryRangeName for cluster [%s (id: %s)]. Use either CIDR block or secondary range name, not both", config.Spec.ClusterName, config.Name)
+		}
+		
+		// When using secondary ranges, ensure useIpAliases is enabled
+		if (config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName != "" || config.Spec.IPAllocationPolicy.ServicesSecondaryRangeName != "") && !config.Spec.IPAllocationPolicy.UseIPAliases {
+			return fmt.Errorf("IP aliases must be enabled when using secondary ranges for cluster [%s (id: %s)]", config.Spec.ClusterName, config.Name)
+		}
+		
+		// Validate that top-level clusterIpv4Cidr is not used with secondary ranges
+		if config.Spec.ClusterIpv4CidrBlock != nil && config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName != "" {
+			return fmt.Errorf("cluster CIDR conflict: cannot specify both top-level clusterIpv4Cidr and ipAllocationPolicy.clusterSecondaryRangeName for cluster [%s (id: %s)]. When using secondary ranges, omit the top-level clusterIpv4Cidr field", config.Spec.ClusterName, config.Name)
+		}
 	}
 
 	for np := range config.Spec.NodePools {
