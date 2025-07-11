@@ -76,6 +76,9 @@ func Register(
 	ctx context.Context,
 	secrets wranglerv1.SecretController,
 	gke gkecontrollers.GKEClusterConfigController) {
+	
+	logrus.Infof("🚀 CONTEXT_DEBUG: GKE Controller Register() called - handlers will be registered")
+	
 	controller := &Handler{
 		gkeCC:           gke,
 		gkeEnqueue:      gke.Enqueue,
@@ -85,21 +88,32 @@ func Register(
 	}
 
 	// Register handlers
+	logrus.Infof("🚀 CONTEXT_DEBUG: Registering OnChange handler")
 	gke.OnChange(ctx, controllerName, controller.recordError(controller.OnGkeConfigChanged))
+	logrus.Infof("🚀 CONTEXT_DEBUG: Registering OnRemove handler")
 	gke.OnRemove(ctx, controllerRemoveName, controller.OnGkeConfigRemoved)
+	logrus.Infof("🚀 CONTEXT_DEBUG: GKE Controller handlers registered successfully")
 }
 
 func (h *Handler) OnGkeConfigChanged(_ string, config *gkev1.GKEClusterConfig) (*gkev1.GKEClusterConfig, error) {
+	logrus.Errorf("🎯 CONTEXT_DEBUG: *** OnGkeConfigChanged ENTRY POINT *** - config pointer: %p", config)
+	
 	if config == nil {
+		logrus.Errorf("🎯 CONTEXT_DEBUG: config is nil, returning early")
 		return nil, nil
 	}
 
 	if config.DeletionTimestamp != nil {
+		logrus.Errorf("🎯 CONTEXT_DEBUG: config has DeletionTimestamp, returning early")
 		return nil, nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	logrus.Errorf("🎯 CONTEXT_DEBUG: OnGkeConfigChanged starting for cluster [%s (id: %s)] phase=[%s]", config.Spec.ClusterName, config.Name, config.Status.Phase)
+
+	// FIXED: Use background context instead of cancellable context for long-running operations
+	// The original defer cancel() was canceling the context while GKE API calls were still running
+	ctx := context.Background()
+	logrus.Infof("🔍 CONTEXT_DEBUG: Using background context (no cancel) for cluster [%s]", config.Spec.ClusterName)
 
 	h.gkeClientCtx = ctx
 
@@ -117,14 +131,19 @@ func (h *Handler) OnGkeConfigChanged(_ string, config *gkev1.GKEClusterConfig) (
 
 	switch config.Status.Phase {
 	case gkeConfigImportingPhase:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handling IMPORTING phase for cluster [%s]", config.Spec.ClusterName)
 		return h.importCluster(config)
 	case gkeConfigNotCreatedPhase:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handling NOT_CREATED phase for cluster [%s] - calling h.create()", config.Spec.ClusterName)
 		return h.create(config)
 	case gkeConfigCreatingPhase:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handling CREATING phase for cluster [%s] - calling h.waitForCreationComplete()", config.Spec.ClusterName)
 		return h.waitForCreationComplete(config)
 	case gkeConfigActivePhase:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handling ACTIVE phase for cluster [%s] - calling h.checkAndUpdate()", config.Spec.ClusterName)
 		return h.checkAndUpdate(config)
 	case gkeConfigUpdatingPhase:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handling UPDATING phase for cluster [%s] - calling h.checkAndUpdate()", config.Spec.ClusterName)
 		return h.checkAndUpdate(config)
 	}
 
@@ -228,6 +247,9 @@ func (h *Handler) OnGkeConfigRemoved(_ string, config *gkev1.GKEClusterConfig) (
 }
 
 func (h *Handler) create(config *gkev1.GKEClusterConfig) (*gkev1.GKEClusterConfig, error) {
+	clusterName := config.Spec.ClusterName
+	logrus.Infof("🔍 CONTEXT_DEBUG: Handler.create() called for cluster [%s (id: %s)]", clusterName, config.Name)
+	
 	if config.Spec.Imported {
 		logrus.Infof("Importing cluster [%s (id: %s)]", config.Spec.ClusterName, config.Name)
 		config = config.DeepCopy()
@@ -235,12 +257,25 @@ func (h *Handler) create(config *gkev1.GKEClusterConfig) (*gkev1.GKEClusterConfi
 		return h.gkeCC.UpdateStatus(config)
 	}
 
+	// Check context health before calling gke.Create
+	select {
+	case <-h.gkeClientCtx.Done():
+		logrus.Errorf("🔍 CONTEXT_DEBUG: Handler context already canceled before gke.Create for [%s]: %v", clusterName, h.gkeClientCtx.Err())
+		return config, h.gkeClientCtx.Err()
+	default:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handler context healthy before gke.Create for [%s]", clusterName)
+	}
+
+	logrus.Infof("🔍 CONTEXT_DEBUG: Calling gke.Create for cluster [%s]", clusterName)
 	if err := gke.Create(h.gkeClientCtx, h.gkeClient, config); err != nil {
+		logrus.Errorf("🔍 CONTEXT_DEBUG: gke.Create failed for cluster [%s]: %v", clusterName, err)
 		return config, err
 	}
+	logrus.Infof("🔍 CONTEXT_DEBUG: gke.Create succeeded for cluster [%s]", clusterName)
 
 	config = config.DeepCopy()
 	config.Status.Phase = gkeConfigCreatingPhase
+	logrus.Infof("🔍 CONTEXT_DEBUG: Setting cluster [%s] to CREATING phase", clusterName)
 	return h.gkeCC.UpdateStatus(config)
 }
 
@@ -475,14 +510,32 @@ func (h *Handler) updateUpstreamClusterState(config *gkev1.GKEClusterConfig, ups
 }
 
 func (h *Handler) waitForCreationComplete(config *gkev1.GKEClusterConfig) (*gkev1.GKEClusterConfig, error) {
+	clusterName := config.Spec.ClusterName
+	logrus.Infof("🔍 CONTEXT_DEBUG: waitForCreationComplete called for cluster [%s (id: %s)]", clusterName, config.Name)
+	
+	// Check context health before calling gke.GetCluster
+	select {
+	case <-h.gkeClientCtx.Done():
+		logrus.Errorf("🔍 CONTEXT_DEBUG: Handler context already canceled in waitForCreationComplete for [%s]: %v", clusterName, h.gkeClientCtx.Err())
+		return config, h.gkeClientCtx.Err()
+	default:
+		logrus.Infof("🔍 CONTEXT_DEBUG: Handler context healthy in waitForCreationComplete for [%s]", clusterName)
+	}
+
+	logrus.Infof("🔍 CONTEXT_DEBUG: Calling gke.GetCluster for [%s]", clusterName)
 	cluster, err := gke.GetCluster(h.gkeClientCtx, h.gkeClient, &config.Spec)
 	if err != nil {
+		logrus.Errorf("🔍 CONTEXT_DEBUG: gke.GetCluster failed for [%s]: %v", clusterName, err)
 		return config, err
 	}
+	logrus.Infof("🔍 CONTEXT_DEBUG: gke.GetCluster succeeded for [%s], status: %s", clusterName, cluster.Status)
+	
 	if cluster.Status == ClusterStatusError {
+		logrus.Errorf("🔍 CONTEXT_DEBUG: Cluster [%s] is in ERROR status", clusterName)
 		return config, fmt.Errorf("creation failed for cluster [%s (id: %s)]", config.Spec.ClusterName, config.Name)
 	}
 	if cluster.Status == ClusterStatusRunning {
+		logrus.Infof("🔍 CONTEXT_DEBUG: Cluster [%s] is RUNNING, creating CA secret", clusterName)
 		if err := h.createCASecret(config, cluster); err != nil {
 			return config, err
 		}
@@ -491,6 +544,7 @@ func (h *Handler) waitForCreationComplete(config *gkev1.GKEClusterConfig) (*gkev
 		config.Status.Phase = gkeConfigActivePhase
 		return h.gkeCC.UpdateStatus(config)
 	}
+	logrus.Infof("🔍 CONTEXT_DEBUG: Cluster [%s] still creating (status: %s), requeueing", clusterName, cluster.Status)
 	logrus.Infof("Waiting for cluster [%s (id: %s)] to finish creating", config.Spec.ClusterName, config.Name)
 	h.gkeEnqueueAfter(config.Namespace, config.Name, wait*time.Second)
 

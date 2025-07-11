@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	gkeapi "google.golang.org/api/container/v1"
+	"github.com/sirupsen/logrus"
 
 	gkev1 "github.com/rancher/gke-operator/pkg/apis/gke.cattle.io/v1"
 	"github.com/rancher/gke-operator/pkg/gke/services"
@@ -21,18 +23,82 @@ const (
 
 // Create creates an upstream GKE cluster.
 func Create(ctx context.Context, gkeClient services.GKEClusterService, config *gkev1.GKEClusterConfig) error {
+	clusterName := config.Spec.ClusterName
+	logrus.Errorf("*** DEBUG *** Starting cluster creation for [%s] - context deadline: %v", clusterName, getContextDeadline(ctx))
+	
+	// Check if context is already canceled
+	select {
+	case <-ctx.Done():
+		logrus.Errorf("*** DEBUG *** Context already canceled before cluster creation for [%s]: %v", clusterName, ctx.Err())
+		return ctx.Err()
+	default:
+		logrus.Errorf("*** DEBUG *** Context is healthy before cluster creation for [%s]", clusterName)
+	}
+
+	start := time.Now()
+	defer func() {
+		logrus.Infof("[DEBUG] Cluster creation attempt for [%s] took %v", clusterName, time.Since(start))
+	}()
+
+	logrus.Infof("[DEBUG] Validating create request for cluster [%s]", clusterName)
 	err := validateCreateRequest(ctx, gkeClient, config)
 	if err != nil {
+		logrus.Errorf("[DEBUG] Validation failed for cluster [%s]: %v", clusterName, err)
+		return err
+	}
+	logrus.Infof("[DEBUG] Validation successful for cluster [%s]", clusterName)
+
+	// Check context again after validation
+	select {
+	case <-ctx.Done():
+		logrus.Errorf("[DEBUG] Context canceled after validation for [%s]: %v", clusterName, ctx.Err())
+		return ctx.Err()
+	default:
+		logrus.Infof("[DEBUG] Context still healthy after validation for [%s]", clusterName)
+	}
+
+	logrus.Infof("[DEBUG] Creating cluster request object for [%s]", clusterName)
+	createClusterRequest := NewClusterCreateRequest(config)
+
+	location := LocationRRN(config.Spec.ProjectID, Location(config.Spec.Region, config.Spec.Zone))
+	logrus.Infof("[DEBUG] Calling GKE API ClusterCreate for [%s] at location [%s]", clusterName, location)
+
+	// Check context right before API call
+	select {
+	case <-ctx.Done():
+		logrus.Errorf("[DEBUG] Context canceled before GKE API call for [%s]: %v", clusterName, ctx.Err())
+		return ctx.Err()
+	default:
+		logrus.Infof("[DEBUG] Context healthy before GKE API call for [%s]", clusterName)
+	}
+
+	apiStart := time.Now()
+	_, err = gkeClient.ClusterCreate(ctx,
+		location,
+		createClusterRequest)
+	apiDuration := time.Since(apiStart)
+
+	if err != nil {
+		// Check if it's a context cancellation
+		if ctx.Err() != nil {
+			logrus.Errorf("[DEBUG] GKE API call failed due to context cancellation for [%s] after %v: context_err=%v, api_err=%v", 
+				clusterName, apiDuration, ctx.Err(), err)
+		} else {
+			logrus.Errorf("[DEBUG] GKE API call failed for [%s] after %v: %v", clusterName, apiDuration, err)
+		}
 		return err
 	}
 
-	createClusterRequest := NewClusterCreateRequest(config)
+	logrus.Infof("[DEBUG] GKE API call successful for [%s] after %v", clusterName, apiDuration)
+	return nil
+}
 
-	_, err = gkeClient.ClusterCreate(ctx,
-		LocationRRN(config.Spec.ProjectID, Location(config.Spec.Region, config.Spec.Zone)),
-		createClusterRequest)
-
-	return err
+// Helper function to get context deadline info
+func getContextDeadline(ctx context.Context) interface{} {
+	if deadline, ok := ctx.Deadline(); ok {
+		return fmt.Sprintf("deadline=%v, remaining=%v", deadline, time.Until(deadline))
+	}
+	return "no deadline"
 }
 
 // CreateNodePool creates an upstream node pool with the given cluster as a parent.
