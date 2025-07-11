@@ -132,6 +132,11 @@ func CreateNodePool(ctx context.Context, gkeClient services.GKEClusterService, c
 // NewClusterCreateRequest creates a CreateClusterRequest that can be submitted to GKE
 func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClusterRequest {
 	enableKubernetesAlpha := config.Spec.EnableKubernetesAlpha != nil && *config.Spec.EnableKubernetesAlpha
+	var clusterIpv4Cidr string
+	if config.Spec.ClusterIpv4CidrBlock != nil {
+		clusterIpv4Cidr = *config.Spec.ClusterIpv4CidrBlock
+	}
+
 	request := &gkeapi.CreateClusterRequest{
 		Cluster: &gkeapi.Cluster{
 			Name:                  config.Spec.ClusterName,
@@ -139,7 +144,7 @@ func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClust
 			ResourceLabels:        config.Spec.Labels,
 			InitialClusterVersion: *config.Spec.KubernetesVersion,
 			EnableKubernetesAlpha: enableKubernetesAlpha,
-			ClusterIpv4Cidr:       *config.Spec.ClusterIpv4CidrBlock,
+			ClusterIpv4Cidr:       clusterIpv4Cidr,
 			LoggingService:        *config.Spec.LoggingService,
 			MonitoringService:     *config.Spec.MonitoringService,
 			IpAllocationPolicy: &gkeapi.IPAllocationPolicy{
@@ -348,9 +353,8 @@ func validateCreateRequest(ctx context.Context, gkeClient services.GKEClusterSer
 	if config.Spec.KubernetesVersion == nil {
 		return fmt.Errorf(cannotBeNilError, "kubernetesVersion", config.Spec.ClusterName, config.Name)
 	}
-	if config.Spec.ClusterIpv4CidrBlock == nil {
-		return fmt.Errorf(cannotBeNilError, "clusterIpv4CidrBlock", config.Spec.ClusterName, config.Name)
-	}
+	// clusterIpv4CidrBlock at top level is optional when using IP aliases
+	// The CIDR blocks are specified in ipAllocationPolicy instead
 	if config.Spec.ClusterAddons == nil {
 		return fmt.Errorf(cannotBeNilError, "clusterAddons", config.Spec.ClusterName, config.Name)
 	}

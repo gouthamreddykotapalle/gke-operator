@@ -2,8 +2,8 @@
 FROM registry.suse.com/bci/bci-micro:15.6
 LABEL maintainer="goutamkreddy@gmail.com"
 
-# Copy pre-built binary
-COPY dist/gke-operator /usr/bin/gke-operator
+# Copy pre-built binary from bin/ folder
+COPY bin/gke-operator /usr/bin/gke-operator
 
 # Set permissions and create user manually
 RUN chmod +x /usr/bin/gke-operator && \
