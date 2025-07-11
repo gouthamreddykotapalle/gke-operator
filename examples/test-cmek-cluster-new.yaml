@@ -4,6 +4,8 @@ metadata:
   name: test-cmek-cluster-new
   namespace: cattle-global-data
 spec:
+  binaryAuthorization:
+    enabled: true
   clusterAddons:
     horizontalPodAutoscaling: true
     httpLoadBalancing: true
@@ -13,6 +15,8 @@ spec:
   enableKubernetesAlpha: false
   googleCredentialSecret: cattle-global-data:cc-nnb6j
   imported: false
+  intraNodeVisibilityConfig:
+    enabled: true
   ipAllocationPolicy:
     clusterSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-pod-0
     servicesSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-svc-0
@@ -30,8 +34,6 @@ spec:
     cidrBlocks:
     - cidrBlock: 10.0.0.0/8
       displayName: "Internal networks"
-    - cidrBlock: 172.16.0.0/12
-      displayName: "Private networks"
     enabled: true
   monitoringService: monitoring.googleapis.com/kubernetes
   network: projects/pp-d-us-central1-xpn/global/networks/us-central1-test-apps
