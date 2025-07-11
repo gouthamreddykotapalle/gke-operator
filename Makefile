@@ -180,3 +180,40 @@ APIDIFF_OLD_COMMIT ?= $(shell git rev-parse origin/main)
 .PHONY: apidiff
 apidiff: $(GO_APIDIFF) ## Check for API differences
 	$(GO_APIDIFF) $(APIDIFF_OLD_COMMIT) --print-compatible
+
+# Custom development build and push target
+CUSTOM_REPO?=gkr007
+CUSTOM_TAG?=$(shell echo "gke-$(GIT_COMMIT_SHORT)-$(shell date +%Y%m%d-%H%M%S)")
+LATEST_TAG?=$(shell echo "gke-$(GIT_COMMIT_SHORT)")
+
+.PHONY: build-and-push
+build-and-push: ## Build operator for Linux and push to custom registry with dynamic tag
+	@echo "Building operator for Linux AMD64..."
+	GOOS=linux GOARCH=amd64 go build -o bin/gke-operator .
+	@echo "Building Docker image with tag: $(CUSTOM_TAG)..."
+	docker build -f Dockerfile.simple -t $(CUSTOM_REPO)/gke-operator:$(CUSTOM_TAG) .
+	@echo "Pushing to registry..."
+	docker push $(CUSTOM_REPO)/gke-operator:$(CUSTOM_TAG)
+	@echo "✅ Successfully built and pushed $(CUSTOM_REPO)/gke-operator:$(CUSTOM_TAG)"
+
+.PHONY: build-and-push-latest
+build-and-push-latest: ## Build operator and push with git-based tag
+	@echo "Building operator for Linux AMD64..."
+	GOOS=linux GOARCH=amd64 go build -o bin/gke-operator .
+	@echo "Building Docker image with tag: $(LATEST_TAG)..."
+	docker build -f Dockerfile.simple -t $(CUSTOM_REPO)/gke-operator:$(LATEST_TAG) .
+	@echo "Also tagging as latest..."
+	docker tag $(CUSTOM_REPO)/gke-operator:$(LATEST_TAG) $(CUSTOM_REPO)/gke-operator:latest
+	@echo "Pushing both tags to registry..."
+	docker push $(CUSTOM_REPO)/gke-operator:$(LATEST_TAG)
+	docker push $(CUSTOM_REPO)/gke-operator:latest
+	@echo "✅ Successfully built and pushed:"
+	@echo "   $(CUSTOM_REPO)/gke-operator:$(LATEST_TAG)"
+	@echo "   $(CUSTOM_REPO)/gke-operator:latest"
+
+.PHONY: show-tag
+show-tag: ## Show what tag would be generated
+	@echo "Dynamic tag: $(CUSTOM_TAG)"
+	@echo "Latest tag: $(LATEST_TAG)"
+	@echo "Git commit: $(GIT_COMMIT_SHORT)"
+	@echo "Git branch: $(GIT_BRANCH)"

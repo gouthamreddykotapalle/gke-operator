@@ -462,9 +462,7 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 	ret := &gkeapi.NodePool{
 		Name: *np.Name,
 		Autoscaling: &gkeapi.NodePoolAutoscaling{
-			Enabled:      np.Autoscaling.Enabled,
-			MaxNodeCount: np.Autoscaling.MaxNodeCount,
-			MinNodeCount: np.Autoscaling.MinNodeCount,
+			Enabled: np.Autoscaling.Enabled,
 		},
 		InitialNodeCount: *np.InitialNodeCount,
 		Config: &gkeapi.NodeConfig{
@@ -486,6 +484,16 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 			AutoUpgrade: np.Management.AutoUpgrade,
 		},
 	}
+	
+	// Only set autoscaling node counts when autoscaling is enabled
+	if np.Autoscaling.Enabled {
+		ret.Autoscaling.MaxNodeCount = np.Autoscaling.MaxNodeCount
+		ret.Autoscaling.MinNodeCount = np.Autoscaling.MinNodeCount
+		logrus.Debugf("🔍 AUTOSCALING_DEBUG: Autoscaling enabled - Min: %d, Max: %d", np.Autoscaling.MinNodeCount, np.Autoscaling.MaxNodeCount)
+	} else {
+		logrus.Debugf("🔍 AUTOSCALING_DEBUG: Autoscaling disabled - not setting min/max node counts")
+	}
+	
 	if config.Spec.CustomerManagedEncryptionKey != nil &&
 		config.Spec.CustomerManagedEncryptionKey.RingName != "" &&
 		config.Spec.CustomerManagedEncryptionKey.KeyName != "" {
