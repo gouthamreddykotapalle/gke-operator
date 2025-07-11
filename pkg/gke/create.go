@@ -133,8 +133,14 @@ func CreateNodePool(ctx context.Context, gkeClient services.GKEClusterService, c
 func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClusterRequest {
 	enableKubernetesAlpha := config.Spec.EnableKubernetesAlpha != nil && *config.Spec.EnableKubernetesAlpha
 	var clusterIpv4Cidr string
-	if config.Spec.ClusterIpv4CidrBlock != nil {
+	// Only set ClusterIpv4Cidr if we're not using secondary ranges
+	logrus.Debugf("🔍 CIDR_DEBUG: ClusterIpv4CidrBlock is nil: %t", config.Spec.ClusterIpv4CidrBlock == nil)
+	logrus.Debugf("🔍 CIDR_DEBUG: ClusterSecondaryRangeName: '%s'", config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName)
+	if config.Spec.ClusterIpv4CidrBlock != nil && config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName == "" {
 		clusterIpv4Cidr = *config.Spec.ClusterIpv4CidrBlock
+		logrus.Debugf("🔍 CIDR_DEBUG: Setting ClusterIpv4Cidr to: %s", clusterIpv4Cidr)
+	} else {
+		logrus.Debugf("🔍 CIDR_DEBUG: NOT setting ClusterIpv4Cidr (using secondary ranges)")
 	}
 
 	request := &gkeapi.CreateClusterRequest{
