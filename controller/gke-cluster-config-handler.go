@@ -99,7 +99,10 @@ func (h *Handler) OnGkeConfigChanged(_ string, config *gkev1.GKEClusterConfig) (
 	}
 
 	// Set up shared context for all GKE API operations
-	h.gkeClientCtx = context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h.gkeClientCtx = ctx
 
 	cred, err := GetSecret(h.gkeClientCtx, h.secrets, &config.Spec)
 	if err != nil {
@@ -189,7 +192,10 @@ func (h *Handler) importCluster(config *gkev1.GKEClusterConfig) (*gkev1.GKEClust
 }
 
 func (h *Handler) OnGkeConfigRemoved(_ string, config *gkev1.GKEClusterConfig) (*gkev1.GKEClusterConfig, error) {
-	h.gkeClientCtx = context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h.gkeClientCtx = ctx
 
 	cred, err := GetSecret(h.gkeClientCtx, h.secrets, &config.Spec)
 	if err != nil {
