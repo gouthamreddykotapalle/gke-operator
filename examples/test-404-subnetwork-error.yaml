@@ -1,0 +1,83 @@
+apiVersion: gke.cattle.io/v1
+kind: GKEClusterConfig
+metadata:
+  name: test-404-subnetwork-error
+  namespace: cattle-global-data
+spec:
+  binaryAuthorization:
+    enabled: true
+  clusterAddons:
+    horizontalPodAutoscaling: true
+    httpLoadBalancing: true
+    networkPolicyConfig: true
+  clusterName: test-404-subnet-err
+  description: "Test cluster to replicate 404 subnetwork error"
+  enableKubernetesAlpha: false
+  googleCredentialSecret: cattle-global-data:cc-nnb6j
+  imported: false
+  intraNodeVisibilityConfig:
+    enabled: true
+  ipAllocationPolicy:
+    clusterSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-pod-0
+    servicesSecondaryRangeName: dev52-test-apps-kubeio-argo-rollout-svc-0
+    useIpAliases: true
+  kubernetesVersion: 1.32.4-gke.1415000
+  labels:
+    environment: "test"
+    encryption: "cmek"
+    version: "v3"
+    test-purpose: "404-error-replication"
+  legacyAbac:
+    enabled: false
+  locations:
+  - us-central1-a
+  loggingService: logging.googleapis.com/kubernetes
+  maintenanceWindow: "05:00"
+  masterAuth:
+    clientCertificateConfig:
+      issueClientCertificate: false
+    password: ""
+    username: ""
+  masterAuthorizedNetworks:
+    cidrBlocks:
+    - cidrBlock: 10.0.0.0/8
+      displayName: "Internal networks"
+    enabled: true
+  monitoringService: monitoring.googleapis.com/kubernetes
+  network: projects/pp-d-us-central1-xpn/global/networks/us-central1-test-apps
+  networkPolicyEnabled: true
+  nodePools:
+  - autoscaling:
+      enabled: false
+    config:
+      bootDiskKmsKey: projects/pp-d-dev-gce01-kms/locations/us-central1/keyRings/dev-pp-keyring-us-central1/cryptoKeys/dev-pp-vmenc-key-us-central1
+      diskSizeGb: 100
+      diskType: pd-balanced
+      imageType: COS_CONTAINERD
+      machineType: e2-medium
+      oauthScopes:
+      - https://www.googleapis.com/auth/cloud-platform
+      serviceAccount: lsvc-d-caas-kubeio@dev52-test-apps-kubeio.iam.gserviceaccount.com
+      shieldedInstanceConfig:
+        enableIntegrityMonitoring: true
+        enableSecureBoot: true
+      workloadMetadataConfig:
+        mode: GKE_METADATA
+    initialNodeCount: 1
+    management:
+      autoRepair: true
+      autoUpgrade: true
+    maxPodsConstraint: 32
+    name: test-404-nodepool
+    version: 1.32.4-gke.1415000
+  privateClusterConfig:
+    enablePrivateEndpoint: true
+    enablePrivateNodes: true
+    masterIpv4CidrBlock: 10.105.0.0/28
+  projectID: dev52-test-apps-kubeio
+  shieldedNodes:
+    enabled: true
+  subnetwork: projects/pp-d-us-central1-xpn/regions/us-central1/subnetworks/nonexistent-subnetwork-404-test
+  workloadIdentityConfig:
+    workloadPool: dev52-test-apps-kubeio.svc.id.goog
+  zone: us-central1-a

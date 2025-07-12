@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 
 	gkeapi "google.golang.org/api/container/v1"
-	"github.com/sirupsen/logrus"
 
 	gkev1 "github.com/rancher/gke-operator/pkg/apis/gke.cattle.io/v1"
 	"github.com/rancher/gke-operator/pkg/gke/services"
@@ -23,82 +21,18 @@ const (
 
 // Create creates an upstream GKE cluster.
 func Create(ctx context.Context, gkeClient services.GKEClusterService, config *gkev1.GKEClusterConfig) error {
-	clusterName := config.Spec.ClusterName
-	logrus.Errorf("*** DEBUG *** Starting cluster creation for [%s] - context deadline: %v", clusterName, getContextDeadline(ctx))
-	
-	// Check if context is already canceled
-	select {
-	case <-ctx.Done():
-		logrus.Errorf("*** DEBUG *** Context already canceled before cluster creation for [%s]: %v", clusterName, ctx.Err())
-		return ctx.Err()
-	default:
-		logrus.Errorf("*** DEBUG *** Context is healthy before cluster creation for [%s]", clusterName)
-	}
-
-	start := time.Now()
-	defer func() {
-		logrus.Infof("[DEBUG] Cluster creation attempt for [%s] took %v", clusterName, time.Since(start))
-	}()
-
-	logrus.Infof("[DEBUG] Validating create request for cluster [%s]", clusterName)
 	err := validateCreateRequest(ctx, gkeClient, config)
 	if err != nil {
-		logrus.Errorf("[DEBUG] Validation failed for cluster [%s]: %v", clusterName, err)
 		return err
 	}
-	logrus.Infof("[DEBUG] Validation successful for cluster [%s]", clusterName)
 
-	// Check context again after validation
-	select {
-	case <-ctx.Done():
-		logrus.Errorf("[DEBUG] Context canceled after validation for [%s]: %v", clusterName, ctx.Err())
-		return ctx.Err()
-	default:
-		logrus.Infof("[DEBUG] Context still healthy after validation for [%s]", clusterName)
-	}
-
-	logrus.Infof("[DEBUG] Creating cluster request object for [%s]", clusterName)
 	createClusterRequest := NewClusterCreateRequest(config)
 
-	location := LocationRRN(config.Spec.ProjectID, Location(config.Spec.Region, config.Spec.Zone))
-	logrus.Infof("[DEBUG] Calling GKE API ClusterCreate for [%s] at location [%s]", clusterName, location)
-
-	// Check context right before API call
-	select {
-	case <-ctx.Done():
-		logrus.Errorf("[DEBUG] Context canceled before GKE API call for [%s]: %v", clusterName, ctx.Err())
-		return ctx.Err()
-	default:
-		logrus.Infof("[DEBUG] Context healthy before GKE API call for [%s]", clusterName)
-	}
-
-	apiStart := time.Now()
 	_, err = gkeClient.ClusterCreate(ctx,
-		location,
+		LocationRRN(config.Spec.ProjectID, Location(config.Spec.Region, config.Spec.Zone)),
 		createClusterRequest)
-	apiDuration := time.Since(apiStart)
 
-	if err != nil {
-		// Check if it's a context cancellation
-		if ctx.Err() != nil {
-			logrus.Errorf("[DEBUG] GKE API call failed due to context cancellation for [%s] after %v: context_err=%v, api_err=%v", 
-				clusterName, apiDuration, ctx.Err(), err)
-		} else {
-			logrus.Errorf("[DEBUG] GKE API call failed for [%s] after %v: %v", clusterName, apiDuration, err)
-		}
-		return err
-	}
-
-	logrus.Infof("[DEBUG] GKE API call successful for [%s] after %v", clusterName, apiDuration)
-	return nil
-}
-
-// Helper function to get context deadline info
-func getContextDeadline(ctx context.Context) interface{} {
-	if deadline, ok := ctx.Deadline(); ok {
-		return fmt.Sprintf("deadline=%v, remaining=%v", deadline, time.Until(deadline))
-	}
-	return "no deadline"
+	return err
 }
 
 // CreateNodePool creates an upstream node pool with the given cluster as a parent.
@@ -133,16 +67,10 @@ func CreateNodePool(ctx context.Context, gkeClient services.GKEClusterService, c
 func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClusterRequest {
 	enableKubernetesAlpha := config.Spec.EnableKubernetesAlpha != nil && *config.Spec.EnableKubernetesAlpha
 	var clusterIpv4Cidr string
-	// Only set ClusterIpv4Cidr if we're not using secondary ranges
-	logrus.Debugf("🔍 CIDR_DEBUG: ClusterIpv4CidrBlock is nil: %t", config.Spec.ClusterIpv4CidrBlock == nil)
-	logrus.Debugf("🔍 CIDR_DEBUG: ClusterSecondaryRangeName: '%s'", config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName)
 	
 	// Don't set top-level ClusterIpv4Cidr when using secondary ranges
 	if config.Spec.ClusterIpv4CidrBlock != nil && config.Spec.IPAllocationPolicy.ClusterSecondaryRangeName == "" {
 		clusterIpv4Cidr = *config.Spec.ClusterIpv4CidrBlock
-		logrus.Debugf("🔍 CIDR_DEBUG: Setting ClusterIpv4Cidr to: %s", clusterIpv4Cidr)
-	} else {
-		logrus.Debugf("🔍 CIDR_DEBUG: NOT setting ClusterIpv4Cidr (using secondary ranges or clusterIpv4CidrBlock is nil)")
 	}
 
 	request := &gkeapi.CreateClusterRequest{
@@ -167,13 +95,6 @@ func NewClusterCreateRequest(config *gkev1.GKEClusterConfig) *gkeapi.CreateClust
 			},
 		},
 	}
-	
-	// Debug logging for IP allocation policy
-	logrus.Debugf("🔍 IP_POLICY_DEBUG: ClusterIpv4CidrBlock: '%s'", request.Cluster.IpAllocationPolicy.ClusterIpv4CidrBlock)
-	logrus.Debugf("🔍 IP_POLICY_DEBUG: ClusterSecondaryRangeName: '%s'", request.Cluster.IpAllocationPolicy.ClusterSecondaryRangeName)
-	logrus.Debugf("🔍 IP_POLICY_DEBUG: ServicesIpv4CidrBlock: '%s'", request.Cluster.IpAllocationPolicy.ServicesIpv4CidrBlock)
-	logrus.Debugf("🔍 IP_POLICY_DEBUG: ServicesSecondaryRangeName: '%s'", request.Cluster.IpAllocationPolicy.ServicesSecondaryRangeName)
-	logrus.Debugf("🔍 IP_POLICY_DEBUG: UseIpAliases: %t", request.Cluster.IpAllocationPolicy.UseIpAliases)
 
 	request.Cluster.AddonsConfig = &gkeapi.AddonsConfig{}
 	request.Cluster.NodePools = make([]*gkeapi.NodePool, 0, len(config.Spec.NodePools))
@@ -489,9 +410,6 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 	if np.Autoscaling.Enabled {
 		ret.Autoscaling.MaxNodeCount = np.Autoscaling.MaxNodeCount
 		ret.Autoscaling.MinNodeCount = np.Autoscaling.MinNodeCount
-		logrus.Debugf("🔍 AUTOSCALING_DEBUG: Autoscaling enabled - Min: %d, Max: %d", np.Autoscaling.MinNodeCount, np.Autoscaling.MaxNodeCount)
-	} else {
-		logrus.Debugf("🔍 AUTOSCALING_DEBUG: Autoscaling disabled - not setting min/max node counts")
 	}
 	
 	if config.Spec.CustomerManagedEncryptionKey != nil &&
@@ -508,7 +426,6 @@ func newGKENodePoolFromConfig(np *gkev1.GKENodePoolConfig, config *gkev1.GKEClus
 	// Check for node-pool-specific boot disk KMS key
 	if np.Config.BootDiskKmsKey != "" {
 		ret.Config.BootDiskKmsKey = np.Config.BootDiskKmsKey
-		logrus.Debugf("🔍 CMEK_DEBUG: Using node-pool-specific bootDiskKmsKey: %s", np.Config.BootDiskKmsKey)
 	}
 	
 	// Security Controls for Node Pools
