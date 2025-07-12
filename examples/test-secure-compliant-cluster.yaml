@@ -20,7 +20,6 @@ spec:
   kubernetesVersion: 1.32.4-gke.1415000
   labels:
     environment: "test"
-    security-compliance: "enabled"
   locations:
   - us-central1-a
   loggingService: logging.googleapis.com/kubernetes
