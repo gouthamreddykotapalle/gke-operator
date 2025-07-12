@@ -26,7 +26,6 @@ spec:
     environment: "test"
     encryption: "cmek"
     version: "v3"
-    compliance: "enabled"
   legacyAbac:
     enabled: false
   locations:
